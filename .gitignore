@@ -1,0 +1,14 @@
+.env
+.venv/
+venv/
+__pycache__/
+*.pyc
+*.pyo
+.ruff_cache/
+
+# Large/private artifacts
+weights/
+logs/
+
+# Separate project repo
+ai-akinator/

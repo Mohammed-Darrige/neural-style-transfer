@@ -1,0 +1,87 @@
+{
+  "project_name": "artoria-style-transfer",
+  "course": "Machine Learning Fundamentals",
+  "department": "Artificial Intelligence and Data Engineering",
+  "dataset_origin": "Team-created Artoria dataset",
+  "selected_topic": "Neural style transfer with LoRA adapters",
+  "base_model": "runwayml/stable-diffusion-v1-5",
+  "training_config": {
+    "project_name": "artoria-style-transfer",
+    "base_model": "runwayml/stable-diffusion-v1-5",
+    "train_mode": "single_gpu",
+    "max_images_per_style": 500,
+    "content_images_path": "/kaggle/input/datasets/h7alasaleh/artoria-dataset/CleanedDataSet/Content",
+    "max_train_steps": 600,
+    "learning_rate": 0.0001,
+    "rank": 8,
+    "resolution": 512,
+    "train_batch_size": 1,
+    "gradient_accumulation_steps": 4,
+    "seed": 42,
+    "workspace_root": "/kaggle/working/style_transfer_workspace",
+    "output_root": "/kaggle/working/artoria_release",
+    "temp_root": "/tmp/artoria_style_transfer",
+    "use_8bit_adam": true
+  },
+  "styles": [
+    {
+      "style_id": "cubism",
+      "display_name": "Cubism",
+      "dataset_path": "/kaggle/input/datasets/h7alasaleh/artoria-dataset/CleanedDataSet/CCubism",
+      "caption": "an artwork in the cubism style",
+      "prompt_suffix": "cubism style, geometric abstraction, angular composition"
+    },
+    {
+      "style_id": "pop-art",
+      "display_name": "Pop Art",
+      "dataset_path": "/kaggle/input/datasets/h7alasaleh/artoria-dataset/CleanedDataSet/CPop_Art",
+      "caption": "an artwork in the pop art style",
+      "prompt_suffix": "pop art style, bold color fields, graphic contrast"
+    },
+    {
+      "style_id": "post-impressionism",
+      "display_name": "Post-Impressionism",
+      "dataset_path": "/kaggle/input/datasets/h7alasaleh/artoria-dataset/CleanedDataSet/CPost_Impressionism",
+      "caption": "an artwork in the post-impressionism style",
+      "prompt_suffix": "post-impressionism style, expressive brushwork, vivid color rhythm"
+    },
+    {
+      "style_id": "ukiyo-e",
+      "display_name": "Ukiyo-e",
+      "dataset_path": "/kaggle/input/datasets/h7alasaleh/artoria-dataset/CleanedDataSet/CUkiyo_e",
+      "caption": "an artwork in the ukiyo-e style",
+      "prompt_suffix": "ukiyo-e style, woodblock print aesthetics, elegant contour lines"
+    }
+  ],
+  "weights_manifest": [
+    {
+      "style_id": "cubism",
+      "output_dir": "/kaggle/working/artoria_release/weights/lora-output-cubism",
+      "weights_path": "/kaggle/working/artoria_release/weights/lora-output-cubism/pytorch_lora_weights.safetensors",
+      "log_path": "/kaggle/working/artoria_release/logs/cubism.log",
+      "weight_size_mb": 6.1178131104
+    },
+    {
+      "style_id": "pop-art",
+      "output_dir": "/kaggle/working/artoria_release/weights/lora-output-pop-art",
+      "weights_path": "/kaggle/working/artoria_release/weights/lora-output-pop-art/pytorch_lora_weights.safetensors",
+      "log_path": "/kaggle/working/artoria_release/logs/pop-art.log",
+      "weight_size_mb": 6.1178131104
+    },
+    {
+      "style_id": "post-impressionism",
+      "output_dir": "/kaggle/working/artoria_release/weights/lora-output-post-impressionism",
+      "weights_path": "/kaggle/working/artoria_release/weights/lora-output-post-impressionism/pytorch_lora_weights.safetensors",
+      "log_path": "/kaggle/working/artoria_release/logs/post-impressionism.log",
+      "weight_size_mb": 6.1178131104
+    },
+    {
+      "style_id": "ukiyo-e",
+      "output_dir": "/kaggle/working/artoria_release/weights/lora-output-ukiyo-e",
+      "weights_path": "/kaggle/working/artoria_release/weights/lora-output-ukiyo-e/pytorch_lora_weights.safetensors",
+      "log_path": "/kaggle/working/artoria_release/logs/ukiyo-e.log",
+      "weight_size_mb": 6.1178131104
+    }
+  ],
+  "validation_grid": "/kaggle/working/artoria_release/figures/artoria_style_transfer_showcase.png"
+}
