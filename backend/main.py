@@ -5,7 +5,11 @@ from pathlib import Path
 from typing import Literal
 
 import torch
-from diffusers import EulerDiscreteScheduler, StableDiffusionImg2ImgPipeline, StableDiffusionPipeline
+from diffusers import (
+    EulerDiscreteScheduler,
+    StableDiffusionImg2ImgPipeline,
+    StableDiffusionPipeline,
+)
 from fastapi import FastAPI, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
 from PIL import Image
@@ -16,19 +20,29 @@ pipeline: StableDiffusionPipeline | None = None
 i2i_pipeline: StableDiffusionImg2ImgPipeline | None = None
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
+cors_origins = [
+    origin.strip()
+    for origin in os.getenv(
+        "CORS_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000"
+    ).split(",")
+    if origin.strip()
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000", "*"],
+    allow_origins=cors_origins,
     allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
+
 class StyleRequest(BaseModel):
-    style_type: Literal["cubism", "post-impressionism", "ukiyo-e"]
+    style_type: Literal["cubism", "pop-art", "post-impressionism", "ukiyo-e"]
     lora_scale: float
     prompt: str
     init_image: str | None = None
+
 
 @app.on_event("startup")
 async def load_pipeline() -> None:
@@ -48,8 +62,11 @@ async def load_pipeline() -> None:
 
     i2i_pipeline = StableDiffusionImg2ImgPipeline(**pipeline.components)
     i2i_pipeline = i2i_pipeline.to(device)
-    i2i_pipeline.scheduler = EulerDiscreteScheduler.from_config(i2i_pipeline.scheduler.config)
+    i2i_pipeline.scheduler = EulerDiscreteScheduler.from_config(
+        i2i_pipeline.scheduler.config
+    )
     print("Base pipeline loaded to memory successfully.")
+
 
 @app.post("/generate")
 async def generate_style(request: StyleRequest):
@@ -59,11 +76,17 @@ async def generate_style(request: StyleRequest):
         raise HTTPException(status_code=503, detail="Pipeline is not ready")
 
     folder_style = request.style_type.lower()
-    
-    # OS PATHING FIX: Handles both Modal Linux Cloud (/root/weights) and Local Windows Desktop (/backend/weights)
-    modal_path = f"/root/weights/lora-output-{folder_style}/pytorch_lora_weights.safetensors"
-    local_path = Path.cwd() / "weights" / f"lora-output-{folder_style}" / "pytorch_lora_weights.safetensors"
-    
+
+    modal_path = (
+        f"/root/weights/lora-output-{folder_style}/pytorch_lora_weights.safetensors"
+    )
+    local_path = (
+        Path.cwd()
+        / "weights"
+        / f"lora-output-{folder_style}"
+        / "pytorch_lora_weights.safetensors"
+    )
+
     if os.path.exists(modal_path):
         lora_path = modal_path
     elif local_path.exists():
@@ -71,7 +94,7 @@ async def generate_style(request: StyleRequest):
     else:
         raise HTTPException(
             status_code=404,
-            detail=f"LoRA weights not found. I checked Modal root ({modal_path}) and local cwd ({local_path}). Please make sure you downloaded them.",
+            detail=f"LoRA weights not found. Checked provider path ({modal_path}) and local path ({local_path}).",
         )
 
     print("[StyleRequest]", request.model_dump())
@@ -81,6 +104,7 @@ async def generate_style(request: StyleRequest):
     style_suffixes = {
         "ukiyo-e": "a ukiyo-e style painting, high quality, authentic woodblock print",
         "cubism": "a cubism style painting, geometric shapes, abstract, high quality",
+        "pop-art": "a pop art style painting, bold color fields, graphic contrast, high quality",
         "post-impressionism": "a post-impressionism style painting, expressive brushstrokes, vivid colors",
     }
 
@@ -100,7 +124,11 @@ async def generate_style(request: StyleRequest):
 
         with torch.inference_mode():
             if request.init_image:
-                init_payload = request.init_image.split(",", 1)[1] if "," in request.init_image else request.init_image
+                init_payload = (
+                    request.init_image.split(",", 1)[1]
+                    if "," in request.init_image
+                    else request.init_image
+                )
                 init_bytes = base64.b64decode(init_payload)
                 init_img = Image.open(BytesIO(init_bytes)).convert("RGB")
 

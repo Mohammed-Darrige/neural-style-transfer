@@ -1,17 +1,22 @@
 # Neural Style Transfer
 
-LoRA-based neural style transfer project built on Stable Diffusion 1.5.
+Public release of a LoRA-based neural style transfer project built on Stable Diffusion 1.5.
 
 ## Overview
 
-This project fine-tunes separate LoRA adapters for four art styles:
+This repository contains:
+
+- a Kaggle-ready training notebook
+- four trained LoRA adapters
+- a FastAPI inference backend
+- a sample showcase image
+
+Supported styles:
 
 - Cubism
 - Pop Art
 - Post-Impressionism
 - Ukiyo-e
-
-The training pipeline was prepared for Kaggle and optimized for constrained GPU environments. The project also includes a FastAPI inference backend for text-to-image and image-to-image generation.
 
 ## Training Summary
 
@@ -22,27 +27,36 @@ The training pipeline was prepared for Kaggle and optimized for constrained GPU 
 - Max train steps: 600
 - Resolution: 512
 - Optimizer mode: 8-bit Adam
-- Output size per adapter: about 6.12 MB
+- Adapter size: about 6.12 MB each
 
 ## Repository Structure
 
 - `Artoria_Style_Transfer_Kaggle_Training.ipynb`: end-to-end Kaggle training notebook
+- `weights/`: trained LoRA adapters for all four styles
 - `backend/`: FastAPI inference service
 - `requirements.txt`: notebook-side training dependencies
-- `run_summary.json`: exported training summary
-- `artoria_style_transfer_showcase.png`: example output grid
+- `run_summary.json`: cleaned training summary
+- `artoria_style_transfer_showcase.png`: sample output grid
 
 ## Local Backend Setup
+
+Run from the repository root:
 
 ```bash
 pip install -r backend/requirements.txt
 uvicorn backend.main:app --reload
 ```
 
-The backend expects LoRA weights under `backend/weights/`, but those weights are intentionally not committed.
+The backend loads adapters from `weights/lora-output-<style>/pytorch_lora_weights.safetensors`.
+
+## Included Weights
+
+- `weights/lora-output-cubism/`
+- `weights/lora-output-pop-art/`
+- `weights/lora-output-post-impressionism/`
+- `weights/lora-output-ukiyo-e/`
 
 ## Notes
 
-- Model weights are excluded from git.
 - Training logs are excluded from git.
-- The Kaggle notebook is the primary training artifact.
+- The notebook is the main training artifact.
