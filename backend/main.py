@@ -1,5 +1,6 @@
 import base64
 import os
+import random
 from io import BytesIO
 from pathlib import Path
 from threading import Lock
@@ -8,7 +9,6 @@ from typing import Literal
 import torch
 from diffusers import (
     AutoencoderKL,
-    DPMSolverMultistepScheduler,
     EulerDiscreteScheduler,
     StableDiffusionImg2ImgPipeline,
     StableDiffusionPipeline,
@@ -35,7 +35,7 @@ INFERENCE_STEPS = int(os.getenv("STYLE_INFERENCE_STEPS", "30"))
 GUIDANCE_SCALE = float(os.getenv("STYLE_GUIDANCE_SCALE", "7.5"))
 IMAGE_SIZE = int(os.getenv("STYLE_IMAGE_SIZE", "512"))
 T2I_GUIDANCE_SCALE = float(os.getenv("STYLE_T2I_GUIDANCE_SCALE", str(GUIDANCE_SCALE)))
-I2I_INFERENCE_STEPS = int(os.getenv("STYLE_I2I_INFERENCE_STEPS", "25"))
+I2I_INFERENCE_STEPS = int(os.getenv("STYLE_I2I_INFERENCE_STEPS", "30"))
 I2I_MIN_DIM = int(os.getenv("STYLE_I2I_MIN_DIM", str(IMAGE_SIZE)))
 I2I_MAX_DIM = int(os.getenv("STYLE_I2I_MAX_DIM", "768"))
 
@@ -48,30 +48,30 @@ STYLE_PRESETS: dict[str, dict[str, object]] = {
     "cubism": {
         "training_caption": "an artwork in the cubism style",
         "negative_prompt": "photograph, smooth skin, soft focus, jpeg artifacts",
-        "lora_scale": 0.90,
-        "i2i_strength": 0.65,
-        "i2i_guidance_scale": 7.0,
+        "lora_scale": 1.0,
+        "i2i_strength": 0.55,
+        "i2i_guidance_scale": 8.5,
     },
     "pop-art": {
         "training_caption": "an artwork in the pop art style",
         "negative_prompt": "photograph, sepia, grayscale, jpeg artifacts",
-        "lora_scale": 0.88,
-        "i2i_strength": 0.60,
-        "i2i_guidance_scale": 7.0,
+        "lora_scale": 1.0,
+        "i2i_strength": 0.50,
+        "i2i_guidance_scale": 8.5,
     },
     "post-impressionism": {
         "training_caption": "an artwork in the post-impressionism style",
         "negative_prompt": "photograph, flat digital shading, smooth blending, jpeg artifacts",
-        "lora_scale": 0.90,
-        "i2i_strength": 0.62,
-        "i2i_guidance_scale": 7.0,
+        "lora_scale": 1.0,
+        "i2i_strength": 0.55,
+        "i2i_guidance_scale": 8.5,
     },
     "ukiyo-e": {
         "training_caption": "an artwork in the ukiyo-e style",
         "negative_prompt": "photograph, 3d rendering, western oil painting, jpeg artifacts",
-        "lora_scale": 0.88,
-        "i2i_strength": 0.60,
-        "i2i_guidance_scale": 7.0,
+        "lora_scale": 1.0,
+        "i2i_strength": 0.50,
+        "i2i_guidance_scale": 8.5,
     },
 }
 
@@ -98,6 +98,7 @@ class StyleRequest(BaseModel):
     style_type: Literal["cubism", "pop-art", "post-impressionism", "ukiyo-e"]
     prompt: str | None = None
     init_image: str | None = None
+    seed: int | None = None
 
 
 def _resolve_lora_path(style: str) -> Path:
@@ -198,17 +199,15 @@ async def load_pipeline() -> None:
 
     i2i_pipeline = StableDiffusionImg2ImgPipeline(**pipeline.components)
     i2i_pipeline = i2i_pipeline.to(device)
-    i2i_pipeline.scheduler = DPMSolverMultistepScheduler.from_config(
+    i2i_pipeline.scheduler = EulerDiscreteScheduler.from_config(
         i2i_pipeline.scheduler.config,
-        use_karras_sigmas=True,
-        algorithm_type="dpmsolver++",
     )
     i2i_pipeline.set_progress_bar_config(disable=True)
 
     assert id(pipeline.unet) == id(i2i_pipeline.unet), "UNet not shared between pipelines"
 
     print(
-        f"Pipeline loaded. device={device} t2i_scheduler=euler i2i_scheduler=dpm++_karras"
+        f"Pipeline loaded. device={device} t2i_scheduler=euler i2i_scheduler=euler"
     )
 
 
@@ -224,9 +223,12 @@ async def generate_style(request: StyleRequest):
     preset = STYLE_PRESETS[folder_style]
     is_img2img = request.init_image is not None
 
+    seed = request.seed if request.seed is not None else random.randint(0, 2**31 - 1)
+    generator = torch.Generator(device="cpu").manual_seed(seed)
+
     print(
         "[StyleRequest]",
-        {"style_type": request.style_type, "prompt": request.prompt, "has_init_image": is_img2img},
+        {"style_type": request.style_type, "prompt": request.prompt, "has_init_image": is_img2img, "seed": seed},
     )
 
     image_buffer = BytesIO()
@@ -238,7 +240,6 @@ async def generate_style(request: StyleRequest):
                 init_source = _decode_init_image(request.init_image or "")
                 init_img = _prepare_init_image(init_source)
 
-            applied_lora_weight = float(preset["lora_scale"])
             enhanced_prompt, negative_prompt = _compose_prompt(
                 folder_style,
                 request.prompt,
@@ -247,7 +248,7 @@ async def generate_style(request: StyleRequest):
 
             print(f"[ResolvedPrompt] {enhanced_prompt}")
             print(
-                f"[Params] lora_scale={applied_lora_weight}"
+                f"[Params] seed={seed}"
                 + (
                     f" i2i_strength={preset['i2i_strength']}"
                     f" guidance={preset['i2i_guidance_scale']}"
@@ -257,15 +258,6 @@ async def generate_style(request: StyleRequest):
             )
 
             pipeline.load_lora_weights(str(lora_path))
-            try:
-                pipeline.set_adapters(
-                    adapter_names=["default"],
-                    adapter_weights=[applied_lora_weight],
-                )
-            except Exception as exc:
-                print(f"[Warning] set_adapters failed ({exc}), using cross_attention_kwargs")
-
-            lora_kwargs = {"scale": applied_lora_weight}
 
             with torch.inference_mode():
                 if is_img2img:
@@ -276,7 +268,7 @@ async def generate_style(request: StyleRequest):
                         strength=float(preset["i2i_strength"]),
                         guidance_scale=float(preset["i2i_guidance_scale"]),
                         num_inference_steps=I2I_INFERENCE_STEPS,
-                        cross_attention_kwargs=lora_kwargs,
+                        generator=generator,
                     )
                 else:
                     result = pipeline(
@@ -286,7 +278,7 @@ async def generate_style(request: StyleRequest):
                         num_inference_steps=INFERENCE_STEPS,
                         width=IMAGE_SIZE,
                         height=IMAGE_SIZE,
-                        cross_attention_kwargs=lora_kwargs,
+                        generator=generator,
                     )
 
             image = result[0][0] if isinstance(result, tuple) else result.images[0]
