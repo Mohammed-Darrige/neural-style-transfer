@@ -10,12 +10,11 @@ ROOT = Path(__file__).resolve().parent
 
 
 def _download_base_model() -> None:
-    from diffusers import AutoencoderKL, ControlNetModel, StableDiffusionPipeline
+    from diffusers import AutoencoderKL, StableDiffusionPipeline
     from transformers import BlipForConditionalGeneration, BlipProcessor
 
     StableDiffusionPipeline.from_pretrained("runwayml/stable-diffusion-v1-5")
     AutoencoderKL.from_pretrained("stabilityai/sd-vae-ft-mse")
-    ControlNetModel.from_pretrained("lllyasviel/sd-controlnet-canny")
     BlipProcessor.from_pretrained("Salesforce/blip-image-captioning-base")
     BlipForConditionalGeneration.from_pretrained("Salesforce/blip-image-captioning-base")
 
@@ -47,7 +46,6 @@ app = modal.App(APP_NAME)
         "STYLE_WEIGHTS_ROOT": "/root/weights",
         "STYLE_INFERENCE_STEPS": "30",
         "STYLE_GUIDANCE_SCALE": "7.5",
-        "STYLE_PRELOAD_ADAPTERS": "1",
         "CORS_ORIGINS": "http://localhost:3000,http://127.0.0.1:3000,https://darrige.tech",
     },
 )
