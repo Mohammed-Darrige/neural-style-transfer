@@ -7,3 +7,5 @@ transformers
 accelerate
 peft
 safetensors
+opencv-python-headless
+numpy

@@ -1,21 +1,56 @@
+from __future__ import annotations
+
+from pathlib import Path
+
 import modal
 
-def download_model():
-    from diffusers import StableDiffusionPipeline
-    print("Downloading StableDiffusion v1.5 onto Modal Image...")
+
+APP_NAME = "premium-portfolio-style-transfer"
+ROOT = Path(__file__).resolve().parent
+
+
+def _download_base_model() -> None:
+    from diffusers import AutoencoderKL, ControlNetModel, StableDiffusionPipeline
+    from transformers import BlipForConditionalGeneration, BlipProcessor
+
     StableDiffusionPipeline.from_pretrained("runwayml/stable-diffusion-v1-5")
+    AutoencoderKL.from_pretrained("stabilityai/sd-vae-ft-mse")
+    ControlNetModel.from_pretrained("lllyasviel/sd-controlnet-canny")
+    BlipProcessor.from_pretrained("Salesforce/blip-image-captioning-base")
+    BlipForConditionalGeneration.from_pretrained("Salesforce/blip-image-captioning-base")
+
 
 image = (
-    modal.Image.debian_slim()
-    .pip_install_from_requirements("requirements.txt")
-    .run_function(download_model)
-    .add_local_dir("weights", remote_path="/root/weights")
-    .add_local_file("main.py", remote_path="/root/main.py")
+    modal.Image.debian_slim(python_version="3.11")
+    .pip_install_from_requirements(str(ROOT / "requirements.txt"))
+    .run_function(_download_base_model)
+    .add_local_file(str(ROOT / "main.py"), remote_path="/root/main.py")
+    .add_local_dir(
+        str(ROOT.parent / "weights"),
+        remote_path="/root/weights",
+    )
 )
 
-app = modal.App("personal-lab-backend")
+app = modal.App(APP_NAME)
 
-@app.function(image=image, gpu="L4")
+
+@app.function(
+    image=image,
+    gpu="L4",
+    cpu=2,
+    memory=8192,
+    timeout=900,
+    scaledown_window=420,
+    min_containers=0,
+    max_containers=2,
+    env={
+        "STYLE_WEIGHTS_ROOT": "/root/weights",
+        "STYLE_INFERENCE_STEPS": "30",
+        "STYLE_GUIDANCE_SCALE": "7.5",
+        "STYLE_PRELOAD_ADAPTERS": "1",
+        "CORS_ORIGINS": "http://localhost:3000,http://127.0.0.1:3000,https://darrige.tech",
+    },
+)
 @modal.asgi_app()
 def fastapi_endpoint():
     import sys
@@ -24,4 +59,5 @@ def fastapi_endpoint():
         sys.path.insert(0, "/root")
 
     from main import app as fastapi_app
+
     return fastapi_app
