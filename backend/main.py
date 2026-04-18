@@ -9,6 +9,7 @@ from typing import Literal
 import torch
 from diffusers import (
     AutoencoderKL,
+    EulerAncestralDiscreteScheduler,
     EulerDiscreteScheduler,
     StableDiffusionImg2ImgPipeline,
     StableDiffusionPipeline,
@@ -35,7 +36,7 @@ INFERENCE_STEPS = int(os.getenv("STYLE_INFERENCE_STEPS", "30"))
 GUIDANCE_SCALE = float(os.getenv("STYLE_GUIDANCE_SCALE", "7.5"))
 IMAGE_SIZE = int(os.getenv("STYLE_IMAGE_SIZE", "512"))
 T2I_GUIDANCE_SCALE = float(os.getenv("STYLE_T2I_GUIDANCE_SCALE", str(GUIDANCE_SCALE)))
-I2I_INFERENCE_STEPS = int(os.getenv("STYLE_I2I_INFERENCE_STEPS", "30"))
+I2I_INFERENCE_STEPS = int(os.getenv("STYLE_I2I_INFERENCE_STEPS", "40"))
 I2I_MIN_DIM = int(os.getenv("STYLE_I2I_MIN_DIM", str(IMAGE_SIZE)))
 I2I_MAX_DIM = int(os.getenv("STYLE_I2I_MAX_DIM", "768"))
 
@@ -46,32 +47,36 @@ DEFAULT_NEGATIVE_PROMPT = os.getenv(
 
 STYLE_PRESETS: dict[str, dict[str, object]] = {
     "cubism": {
-        "training_caption": "an artwork in the cubism style",
-        "negative_prompt": "photograph, smooth skin, soft focus, jpeg artifacts",
+        "training_caption": "an artwork in the cubism style, geometric abstraction, angular planes, fractured perspective",
+        "negative_prompt": "photograph, realistic, smooth skin, soft focus, jpeg artifacts",
         "lora_scale": 1.0,
-        "i2i_strength": 0.55,
-        "i2i_guidance_scale": 8.5,
+        "i2i_strength": 0.70,
+        "i2i_guidance_scale": 12.0,
+        "t2i_prompt": "an artwork in the cubism style",
     },
     "pop-art": {
-        "training_caption": "an artwork in the pop art style",
-        "negative_prompt": "photograph, sepia, grayscale, jpeg artifacts",
+        "training_caption": "an artwork in the pop art style, bold flat colors, high contrast, comic print",
+        "negative_prompt": "photograph, realistic, muted colors, jpeg artifacts",
         "lora_scale": 1.0,
-        "i2i_strength": 0.50,
-        "i2i_guidance_scale": 8.5,
+        "i2i_strength": 0.65,
+        "i2i_guidance_scale": 12.0,
+        "t2i_prompt": "an artwork in the pop art style",
     },
     "post-impressionism": {
-        "training_caption": "an artwork in the post-impressionism style",
-        "negative_prompt": "photograph, flat digital shading, smooth blending, jpeg artifacts",
+        "training_caption": "an artwork in the post-impressionism style, thick visible brushstrokes, vivid color, painterly texture",
+        "negative_prompt": "photograph, realistic, smooth blending, jpeg artifacts",
         "lora_scale": 1.0,
-        "i2i_strength": 0.55,
-        "i2i_guidance_scale": 8.5,
+        "i2i_strength": 0.70,
+        "i2i_guidance_scale": 12.0,
+        "t2i_prompt": "an artwork in the post-impressionism style",
     },
     "ukiyo-e": {
-        "training_caption": "an artwork in the ukiyo-e style",
-        "negative_prompt": "photograph, 3d rendering, western oil painting, jpeg artifacts",
+        "training_caption": "an artwork in the ukiyo-e style, flat color areas, elegant black contour lines, japanese woodblock print",
+        "negative_prompt": "photograph, realistic, 3d rendering, western painting, jpeg artifacts",
         "lora_scale": 1.0,
-        "i2i_strength": 0.50,
-        "i2i_guidance_scale": 8.5,
+        "i2i_strength": 0.65,
+        "i2i_guidance_scale": 12.0,
+        "t2i_prompt": "an artwork in the ukiyo-e style",
     },
 }
 
@@ -153,19 +158,20 @@ def _compose_prompt(
     base_prompt = (prompt or "").strip()
 
     if is_img2img:
-        training_caption = str(preset["training_caption"])
-        parts: list[str] = [training_caption]
+        caption = str(preset["training_caption"])
+        parts: list[str] = [caption]
         if base_prompt:
             parts.append(base_prompt)
         return ", ".join(parts), negative_prompt
 
+    t2i_caption = str(preset.get("t2i_prompt", preset["training_caption"]))
     if not base_prompt:
         raise HTTPException(
             status_code=422,
             detail="Prompt is required for text-to-image mode.",
         )
 
-    return f"{base_prompt}, {preset['training_caption']}", negative_prompt
+    return f"{base_prompt}, {t2i_caption}", negative_prompt
 
 
 @app.on_event("startup")
@@ -199,7 +205,7 @@ async def load_pipeline() -> None:
 
     i2i_pipeline = StableDiffusionImg2ImgPipeline(**pipeline.components)
     i2i_pipeline = i2i_pipeline.to(device)
-    i2i_pipeline.scheduler = EulerDiscreteScheduler.from_config(
+    i2i_pipeline.scheduler = EulerAncestralDiscreteScheduler.from_config(
         i2i_pipeline.scheduler.config,
     )
     i2i_pipeline.set_progress_bar_config(disable=True)
@@ -207,7 +213,7 @@ async def load_pipeline() -> None:
     assert id(pipeline.unet) == id(i2i_pipeline.unet), "UNet not shared between pipelines"
 
     print(
-        f"Pipeline loaded. device={device} t2i_scheduler=euler i2i_scheduler=euler"
+        f"Pipeline loaded. device={device} t2i_scheduler=euler i2i_scheduler=euler_a"
     )
 
 
@@ -252,6 +258,7 @@ async def generate_style(request: StyleRequest):
                 + (
                     f" i2i_strength={preset['i2i_strength']}"
                     f" guidance={preset['i2i_guidance_scale']}"
+                    f" steps={I2I_INFERENCE_STEPS}"
                     if is_img2img
                     else f" guidance={T2I_GUIDANCE_SCALE}"
                 )
