@@ -4,6 +4,8 @@ Public release of a LoRA-based neural style transfer project built on Stable Dif
 
 ## Overview
 
+**Architecture Status:** The Text-to-Image pipeline is fully active and operational. The Image-to-Image module is currently locked and undergoing a major architecture refactoring.
+
 This repository contains:
 
 - a Kaggle-ready training notebook
