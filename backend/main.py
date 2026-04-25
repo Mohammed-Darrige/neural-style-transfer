@@ -1,4 +1,5 @@
 import base64
+import binascii
 import os
 import random
 from io import BytesIO
@@ -9,8 +10,6 @@ from typing import Literal
 import torch
 from diffusers import (
     AutoencoderKL,
-    EulerAncestralDiscreteScheduler,
-    EulerDiscreteScheduler,
     StableDiffusionImg2ImgPipeline,
     StableDiffusionPipeline,
 )
@@ -25,7 +24,7 @@ i2i_pipeline: StableDiffusionImg2ImgPipeline | None = None
 device = "cuda" if torch.cuda.is_available() else "cpu"
 INFERENCE_LOCK = Lock()
 
-SUPPORTED_STYLES = ("cubism", "pop-art", "post-impressionism", "ukiyo-e")
+SUPPORTED_STYLES = ("cubism", "post-impressionism", "ukiyo-e")
 WEIGHTS_ROOT = Path(
     os.getenv(
         "STYLE_WEIGHTS_ROOT",
@@ -36,47 +35,33 @@ INFERENCE_STEPS = int(os.getenv("STYLE_INFERENCE_STEPS", "30"))
 GUIDANCE_SCALE = float(os.getenv("STYLE_GUIDANCE_SCALE", "7.5"))
 IMAGE_SIZE = int(os.getenv("STYLE_IMAGE_SIZE", "512"))
 T2I_GUIDANCE_SCALE = float(os.getenv("STYLE_T2I_GUIDANCE_SCALE", str(GUIDANCE_SCALE)))
-I2I_INFERENCE_STEPS = int(os.getenv("STYLE_I2I_INFERENCE_STEPS", "40"))
+I2I_INFERENCE_STEPS = int(os.getenv("STYLE_I2I_INFERENCE_STEPS", "30"))
 I2I_MIN_DIM = int(os.getenv("STYLE_I2I_MIN_DIM", str(IMAGE_SIZE)))
 I2I_MAX_DIM = int(os.getenv("STYLE_I2I_MAX_DIM", "768"))
 
 DEFAULT_NEGATIVE_PROMPT = os.getenv(
     "STYLE_NEGATIVE_PROMPT",
-    "low quality, worst quality, blurry, jpeg artifacts, watermark, text, signature",
+    "photograph, photorealistic, realism, real life, low quality, worst quality, blurry, jpeg artifacts, watermark, text, signature",
 )
 
 STYLE_PRESETS: dict[str, dict[str, object]] = {
     "cubism": {
-        "training_caption": "an artwork in the cubism style, geometric abstraction, angular planes, fractured perspective",
-        "negative_prompt": "photograph, realistic, smooth skin, soft focus, jpeg artifacts",
-        "lora_scale": 1.0,
-        "i2i_strength": 0.70,
-        "i2i_guidance_scale": 12.0,
-        "t2i_prompt": "an artwork in the cubism style",
-    },
-    "pop-art": {
-        "training_caption": "an artwork in the pop art style, bold flat colors, high contrast, comic print",
-        "negative_prompt": "photograph, realistic, muted colors, jpeg artifacts",
-        "lora_scale": 1.0,
+        "training_caption": "in cubism style, geometric shapes, picasso style",
+        "negative_prompt": "3d render, cg",
         "i2i_strength": 0.65,
-        "i2i_guidance_scale": 12.0,
-        "t2i_prompt": "an artwork in the pop art style",
+        "i2i_guidance_scale": 8.0,
     },
     "post-impressionism": {
-        "training_caption": "an artwork in the post-impressionism style, thick visible brushstrokes, vivid color, painterly texture",
-        "negative_prompt": "photograph, realistic, smooth blending, jpeg artifacts",
-        "lora_scale": 1.0,
-        "i2i_strength": 0.70,
-        "i2i_guidance_scale": 12.0,
-        "t2i_prompt": "an artwork in the post-impressionism style",
+        "training_caption": "in post-impressionism style, painting style",
+        "negative_prompt": "3d render, cg",
+        "i2i_strength": 0.65,
+        "i2i_guidance_scale": 8.0,
     },
     "ukiyo-e": {
-        "training_caption": "an artwork in the ukiyo-e style, flat color areas, elegant black contour lines, japanese woodblock print",
-        "negative_prompt": "photograph, realistic, 3d rendering, western painting, jpeg artifacts",
-        "lora_scale": 1.0,
+        "training_caption": "in ukiyo-e style, woodblock print, flat colors",
+        "negative_prompt": "3d render, cg",
         "i2i_strength": 0.65,
-        "i2i_guidance_scale": 12.0,
-        "t2i_prompt": "an artwork in the ukiyo-e style",
+        "i2i_guidance_scale": 8.0,
     },
 }
 
@@ -100,9 +85,10 @@ app.add_middleware(
 
 
 class StyleRequest(BaseModel):
-    style_type: Literal["cubism", "pop-art", "post-impressionism", "ukiyo-e"]
+    style_type: Literal["cubism", "post-impressionism", "ukiyo-e"]
     prompt: str | None = None
     init_image: str | None = None
+    strength: float | None = None
     seed: int | None = None
 
 
@@ -119,10 +105,13 @@ def _resolve_lora_path(style: str) -> Path:
 
 
 def _decode_init_image(payload: str) -> Image.Image:
-    init_payload = payload.split(",", 1)[1] if "," in payload else payload
-    init_bytes = base64.b64decode(init_payload)
-    init_img = Image.open(BytesIO(init_bytes))
-    return ImageOps.exif_transpose(init_img).convert("RGB")
+    try:
+        init_payload = payload.split(",", 1)[1] if "," in payload else payload
+        init_bytes = base64.b64decode(init_payload, validate=True)
+        init_img = Image.open(BytesIO(init_bytes))
+        return ImageOps.exif_transpose(init_img).convert("RGB")
+    except (binascii.Error, OSError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail="Invalid source image.") from exc
 
 
 def _round_to_multiple(value: float, multiple: int = 8) -> int:
@@ -174,6 +163,17 @@ def _compose_prompt(
     return f"{base_prompt}, {t2i_caption}", negative_prompt
 
 
+def _resolve_strength(requested: float | None, default: float) -> float:
+    if requested is None:
+        return default
+    if requested < 0.1 or requested > 1.0:
+        raise HTTPException(
+            status_code=422,
+            detail="Strength must be between 0.1 and 1.0.",
+        )
+    return requested
+
+
 @app.on_event("startup")
 async def load_pipeline() -> None:
     global pipeline, i2i_pipeline
@@ -200,20 +200,16 @@ async def load_pipeline() -> None:
         requires_safety_checker=False,
     )
     pipeline = pipeline.to(device)
-    pipeline.scheduler = EulerDiscreteScheduler.from_config(pipeline.scheduler.config)
     pipeline.set_progress_bar_config(disable=True)
 
     i2i_pipeline = StableDiffusionImg2ImgPipeline(**pipeline.components)
     i2i_pipeline = i2i_pipeline.to(device)
-    i2i_pipeline.scheduler = EulerAncestralDiscreteScheduler.from_config(
-        i2i_pipeline.scheduler.config,
-    )
     i2i_pipeline.set_progress_bar_config(disable=True)
 
     assert id(pipeline.unet) == id(i2i_pipeline.unet), "UNet not shared between pipelines"
 
     print(
-        f"Pipeline loaded. device={device} t2i_scheduler=euler i2i_scheduler=euler_a"
+        f"Pipeline loaded. device={device}"
     )
 
 
@@ -256,7 +252,7 @@ async def generate_style(request: StyleRequest):
             print(
                 f"[Params] seed={seed}"
                 + (
-                    f" i2i_strength={preset['i2i_strength']}"
+                    f" i2i_strength={request.strength if request.strength is not None else preset['i2i_strength']}"
                     f" guidance={preset['i2i_guidance_scale']}"
                     f" steps={I2I_INFERENCE_STEPS}"
                     if is_img2img
@@ -268,11 +264,15 @@ async def generate_style(request: StyleRequest):
 
             with torch.inference_mode():
                 if is_img2img:
+                    strength = _resolve_strength(
+                        request.strength,
+                        float(preset["i2i_strength"]),
+                    )
                     result = i2i_pipeline(
                         prompt=enhanced_prompt,
                         negative_prompt=negative_prompt,
                         image=init_img,
-                        strength=float(preset["i2i_strength"]),
+                        strength=strength,
                         guidance_scale=float(preset["i2i_guidance_scale"]),
                         num_inference_steps=I2I_INFERENCE_STEPS,
                         generator=generator,

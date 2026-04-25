@@ -45,7 +45,7 @@ app = modal.App(APP_NAME)
     env={
         "STYLE_WEIGHTS_ROOT": "/root/weights",
         "STYLE_INFERENCE_STEPS": "30",
-        "STYLE_GUIDANCE_SCALE": "7.5",
+        "STYLE_GUIDANCE_SCALE": "8.0",
         "CORS_ORIGINS": "http://localhost:3000,http://127.0.0.1:3000,https://darrige.tech",
     },
 )
