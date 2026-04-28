@@ -4,7 +4,7 @@ Public release of a LoRA-based neural style transfer project built on Stable Dif
 
 ## Overview
 
-**Architecture Status:** The Text-to-Image pipeline is fully active and operational. The Image-to-Image module is currently locked and undergoing a major architecture refactoring.
+**Architecture Status:** The Image-to-Image style-transfer pipeline is active and uses a single user-facing strength control. Text-to-image support remains secondary.
 
 This repository contains:
 
@@ -29,12 +29,12 @@ Supported styles:
 - Max train steps: 600
 - Resolution: 512
 - Optimizer mode: 8-bit Adam
-- Adapter size: about 6.12 MB each
+- Adapter size: about 3.08 MB each
 
 ## Repository Structure
 
 - `Artoria_Style_Transfer_Kaggle_Training.ipynb`: end-to-end Kaggle training notebook
-- `weights/`: trained LoRA adapters for all four styles
+- `weights/`: trained LoRA adapters for the supported styles
 - `backend/`: FastAPI inference service
 - `requirements.txt`: notebook-side training dependencies
 - `run_summary.json`: cleaned training summary
@@ -49,7 +49,7 @@ pip install -r backend/requirements.txt
 uvicorn backend.main:app --reload
 ```
 
-The backend loads adapters from `weights/lora-output-<style>/pytorch_lora_weights.safetensors`.
+The backend loads adapters from `weights/lora-output-<style>/pytorch_lora_weights.safetensors`. Image-to-image requests may pass `strength` between `0.1` and `1.0`; the backend keeps the guidance scale fixed.
 
 ## Included Weights
 
