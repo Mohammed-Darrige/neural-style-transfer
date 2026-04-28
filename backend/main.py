@@ -40,8 +40,13 @@ I2I_INFERENCE_STEPS = int(os.getenv("STYLE_I2I_INFERENCE_STEPS", "50"))
 I2I_MIN_DIM = int(os.getenv("STYLE_I2I_MIN_DIM", str(IMAGE_SIZE)))
 I2I_MAX_DIM = int(os.getenv("STYLE_I2I_MAX_DIM", "768"))
 
-DEFAULT_NEGATIVE_PROMPT = os.getenv(
-    "STYLE_NEGATIVE_PROMPT",
+DEFAULT_NEGATIVE_PROMPT_I2I = os.getenv(
+    "STYLE_NEGATIVE_PROMPT_I2I",
+    "low quality, worst quality, blurry, jpeg artifacts, watermark, text, signature, deformed",
+)
+
+DEFAULT_NEGATIVE_PROMPT_T2I = os.getenv(
+    "STYLE_NEGATIVE_PROMPT_T2I",
     "photograph, photorealistic, realism, real life, low quality, worst quality, blurry, jpeg artifacts, watermark, text, signature",
 )
 
@@ -150,7 +155,8 @@ def _compose_prompt(
     is_img2img: bool,
 ) -> tuple[str, str]:
     preset = STYLE_PRESETS[style]
-    negative_prompt = f"{DEFAULT_NEGATIVE_PROMPT}, {preset['negative_prompt']}"
+    base_negative = DEFAULT_NEGATIVE_PROMPT_I2I if is_img2img else DEFAULT_NEGATIVE_PROMPT_T2I
+    negative_prompt = f"{base_negative}, {preset['negative_prompt']}"
     base_prompt = (prompt or "").strip()
 
     if is_img2img:
@@ -185,9 +191,8 @@ def _resolve_strength(requested: float | None, default: float) -> float:
     # Strength is *denoising amount* in img2img: too low looks near-identity,
     # too high can drift into unrelated images.
     # Use a smooth, predictable mapping for the user slider [0..1].
-    # Keep denoising in a conservative band to reduce "unrelated" outputs.
-    # We drive perceived style intensity mostly via LoRA scale.
-    MIN_STRENGTH = 0.48
+    # Keep denoising in a safe band to reduce unrelated outputs.
+    MIN_STRENGTH = 0.42
     MAX_STRENGTH = 0.62
 
     u = min(max(float(requested), 0.0), 1.0)
@@ -197,8 +202,8 @@ def _resolve_strength(requested: float | None, default: float) -> float:
 
 
 def _resolve_lora_scale(user_strength: float | None) -> float:
-    MIN_SCALE = 1.05
-    MAX_SCALE = 1.35
+    MIN_SCALE = 0.95
+    MAX_SCALE = 1.30
     u = 0.5 if user_strength is None else min(max(float(user_strength), 0.0), 1.0)
     u = u**1.6
     return MIN_SCALE + (u * (MAX_SCALE - MIN_SCALE))
