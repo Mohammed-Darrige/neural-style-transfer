@@ -10,6 +10,7 @@ from typing import Literal
 import torch
 from diffusers import (
     AutoencoderKL,
+    EulerAncestralDiscreteScheduler,
     StableDiffusionImg2ImgPipeline,
     StableDiffusionPipeline,
 )
@@ -240,6 +241,11 @@ async def load_pipeline() -> None:
     i2i_pipeline = StableDiffusionImg2ImgPipeline(**pipeline.components)
     i2i_pipeline = i2i_pipeline.to(device)
     i2i_pipeline.set_progress_bar_config(disable=True)
+
+    # Euler Ancestral is generally smoother for img2img style transfer.
+    i2i_pipeline.scheduler = EulerAncestralDiscreteScheduler.from_config(
+        i2i_pipeline.scheduler.config
+    )
 
     assert id(pipeline.unet) == id(i2i_pipeline.unet), "UNet not shared between pipelines"
 
