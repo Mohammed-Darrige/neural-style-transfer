@@ -178,9 +178,18 @@ def _resolve_strength(requested: float | None, default: float) -> float:
             detail="Strength must be between 0.0 and 1.0.",
         )
 
-    # UX: the 0.0-0.5 region tends to look too close to the source image.
-    # Remap user slider [0.0, 1.0] -> actual img2img strength [0.5, 1.0].
-    return 0.5 + (requested * 0.5)
+    # UX mapping:
+    # - Avoid near-identity outputs at very low strengths
+    # - Avoid “unrelated image” failures at high strengths
+    # We expose a user slider in [0.0, 1.0] but only use a safe band.
+    # Also, we clip values above USER_CEILING to prevent extreme denoising.
+    MIN_STRENGTH = 0.46
+    MAX_STRENGTH = 0.62
+    USER_CEILING = 0.20
+
+    u = min(max(float(requested), 0.0), 1.0)
+    u = min(u, USER_CEILING) / USER_CEILING
+    return MIN_STRENGTH + (u * (MAX_STRENGTH - MIN_STRENGTH))
 
 
 @app.on_event("startup")
