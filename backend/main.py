@@ -178,18 +178,35 @@ def _resolve_strength(requested: float | None, default: float) -> float:
             detail="Strength must be between 0.0 and 1.0.",
         )
 
-    # UX mapping:
-    # - Avoid near-identity outputs at very low strengths
-    # - Avoid “unrelated image” failures at high strengths
-    # We expose a user slider in [0.0, 1.0] but only use a safe band.
-    # Also, we clip values above USER_CEILING to prevent extreme denoising.
-    MIN_STRENGTH = 0.46
-    MAX_STRENGTH = 0.62
-    USER_CEILING = 0.20
+    # Strength is *denoising amount* in img2img: too low looks near-identity,
+    # too high can drift into unrelated images.
+    # Use a smooth, predictable mapping for the user slider [0..1].
+    MIN_STRENGTH = 0.32
+    MAX_STRENGTH = 0.72
 
     u = min(max(float(requested), 0.0), 1.0)
-    u = min(u, USER_CEILING) / USER_CEILING
+    # Bias for finer control at low values.
+    u = u**1.6
     return MIN_STRENGTH + (u * (MAX_STRENGTH - MIN_STRENGTH))
+
+
+def _resolve_lora_scale(user_strength: float | None) -> float:
+    MIN_SCALE = 0.75
+    MAX_SCALE = 1.10
+    u = 0.5 if user_strength is None else min(max(float(user_strength), 0.0), 1.0)
+    u = u**1.6
+    return MIN_SCALE + (u * (MAX_SCALE - MIN_SCALE))
+
+
+def _apply_lora(style_path: Path, lora_scale: float) -> None:
+    assert pipeline is not None
+    assert i2i_pipeline is not None
+
+    pipeline.load_lora_weights(str(style_path), adapter_name="style")
+    if hasattr(pipeline, "set_adapters"):
+        pipeline.set_adapters(["style"], adapter_weights=[float(lora_scale)])
+    if hasattr(i2i_pipeline, "set_adapters"):
+        i2i_pipeline.set_adapters(["style"], adapter_weights=[float(lora_scale)])
 
 
 @app.on_event("startup")
@@ -278,7 +295,7 @@ async def generate_style(request: StyleRequest):
                 )
             )
 
-            pipeline.load_lora_weights(str(lora_path))
+            _apply_lora(lora_path, _resolve_lora_scale(request.strength))
 
             with torch.inference_mode():
                 if is_img2img:
