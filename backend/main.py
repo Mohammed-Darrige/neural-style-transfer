@@ -101,7 +101,6 @@ class StyleRequest(BaseModel):
     prompt: str | None = None
     init_image: str | None = None
     strength: float | None = None
-    seed: int | None = None
 
 
 def _resolve_lora_path(style: str) -> Path:
