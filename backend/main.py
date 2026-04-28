@@ -155,7 +155,10 @@ def _compose_prompt(
 
     if is_img2img:
         caption = str(preset["training_caption"])
-        parts: list[str] = [caption]
+        parts: list[str] = [
+            caption,
+            "preserve the original subject and composition",
+        ]
         if base_prompt:
             parts.append(base_prompt)
         return ", ".join(parts), negative_prompt
@@ -182,8 +185,10 @@ def _resolve_strength(requested: float | None, default: float) -> float:
     # Strength is *denoising amount* in img2img: too low looks near-identity,
     # too high can drift into unrelated images.
     # Use a smooth, predictable mapping for the user slider [0..1].
-    MIN_STRENGTH = 0.32
-    MAX_STRENGTH = 0.72
+    # Keep denoising in a conservative band to reduce "unrelated" outputs.
+    # We drive perceived style intensity mostly via LoRA scale.
+    MIN_STRENGTH = 0.48
+    MAX_STRENGTH = 0.62
 
     u = min(max(float(requested), 0.0), 1.0)
     # Bias for finer control at low values.
@@ -192,8 +197,8 @@ def _resolve_strength(requested: float | None, default: float) -> float:
 
 
 def _resolve_lora_scale(user_strength: float | None) -> float:
-    MIN_SCALE = 0.75
-    MAX_SCALE = 1.10
+    MIN_SCALE = 1.05
+    MAX_SCALE = 1.35
     u = 0.5 if user_strength is None else min(max(float(user_strength), 0.0), 1.0)
     u = u**1.6
     return MIN_SCALE + (u * (MAX_SCALE - MIN_SCALE))
