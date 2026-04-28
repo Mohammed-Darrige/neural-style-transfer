@@ -24,7 +24,7 @@ i2i_pipeline: StableDiffusionImg2ImgPipeline | None = None
 device = "cuda" if torch.cuda.is_available() else "cpu"
 INFERENCE_LOCK = Lock()
 
-SUPPORTED_STYLES = ("cubism", "post-impressionism", "ukiyo-e")
+SUPPORTED_STYLES = ("cubism", "pop-art", "post-impressionism", "ukiyo-e")
 WEIGHTS_ROOT = Path(
     os.getenv(
         "STYLE_WEIGHTS_ROOT",
@@ -35,7 +35,7 @@ INFERENCE_STEPS = int(os.getenv("STYLE_INFERENCE_STEPS", "30"))
 GUIDANCE_SCALE = float(os.getenv("STYLE_GUIDANCE_SCALE", "7.5"))
 IMAGE_SIZE = int(os.getenv("STYLE_IMAGE_SIZE", "512"))
 T2I_GUIDANCE_SCALE = float(os.getenv("STYLE_T2I_GUIDANCE_SCALE", str(GUIDANCE_SCALE)))
-I2I_INFERENCE_STEPS = int(os.getenv("STYLE_I2I_INFERENCE_STEPS", "30"))
+I2I_INFERENCE_STEPS = int(os.getenv("STYLE_I2I_INFERENCE_STEPS", "50"))
 I2I_MIN_DIM = int(os.getenv("STYLE_I2I_MIN_DIM", str(IMAGE_SIZE)))
 I2I_MAX_DIM = int(os.getenv("STYLE_I2I_MAX_DIM", "768"))
 
@@ -47,6 +47,12 @@ DEFAULT_NEGATIVE_PROMPT = os.getenv(
 STYLE_PRESETS: dict[str, dict[str, object]] = {
     "cubism": {
         "training_caption": "in cubism style, geometric shapes, picasso style",
+        "negative_prompt": "3d render, cg",
+        "i2i_strength": 0.65,
+        "i2i_guidance_scale": 8.0,
+    },
+    "pop-art": {
+        "training_caption": "in pop art style, bold colors, graphic design",
         "negative_prompt": "3d render, cg",
         "i2i_strength": 0.65,
         "i2i_guidance_scale": 8.0,
@@ -85,7 +91,7 @@ app.add_middleware(
 
 
 class StyleRequest(BaseModel):
-    style_type: Literal["cubism", "post-impressionism", "ukiyo-e"]
+    style_type: Literal["cubism", "pop-art", "post-impressionism", "ukiyo-e"]
     prompt: str | None = None
     init_image: str | None = None
     strength: float | None = None
@@ -166,12 +172,15 @@ def _compose_prompt(
 def _resolve_strength(requested: float | None, default: float) -> float:
     if requested is None:
         return default
-    if requested < 0.1 or requested > 1.0:
+    if requested < 0.0 or requested > 1.0:
         raise HTTPException(
             status_code=422,
-            detail="Strength must be between 0.1 and 1.0.",
+            detail="Strength must be between 0.0 and 1.0.",
         )
-    return requested
+
+    # UX: the 0.0-0.5 region tends to look too close to the source image.
+    # Remap user slider [0.0, 1.0] -> actual img2img strength [0.5, 1.0].
+    return 0.5 + (requested * 0.5)
 
 
 @app.on_event("startup")
