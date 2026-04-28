@@ -30,13 +30,6 @@
       "prompt_suffix": "cubism style, geometric abstraction, angular composition"
     },
     {
-      "style_id": "pop-art",
-      "display_name": "Pop Art",
-      "dataset_path": "dataset/CPop_Art",
-      "caption": "an artwork in the pop art style",
-      "prompt_suffix": "pop art style, bold colors, graphic design"
-    },
-    {
       "style_id": "post-impressionism",
       "display_name": "Post-Impressionism",
       "dataset_path": "dataset/CPost_Impressionism",
@@ -58,13 +51,6 @@
       "weights_path": "weights/lora-output-cubism/pytorch_lora_weights.safetensors",
       "log_path": "logs/cubism.log",
       "weight_size_mb": 3.0767288208
-    },
-    {
-      "style_id": "pop-art",
-      "output_dir": "weights/lora-output-pop-art",
-      "weights_path": "weights/lora-output-pop-art/pytorch_lora_weights.safetensors",
-      "log_path": "logs/pop-art.log",
-      "weight_size_mb": 48.6893463135
     },
     {
       "style_id": "post-impressionism",

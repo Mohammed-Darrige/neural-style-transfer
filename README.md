@@ -16,7 +16,6 @@ This repository contains:
 Supported styles:
 
 - Cubism
-- Pop Art
 - Post-Impressionism
 - Ukiyo-e
 
@@ -54,7 +53,6 @@ The backend loads adapters from `weights/lora-output-<style>/pytorch_lora_weight
 ## Included Weights
 
 - `weights/lora-output-cubism/`
-- `weights/lora-output-pop-art/`
 - `weights/lora-output-post-impressionism/`
 - `weights/lora-output-ukiyo-e/`
 

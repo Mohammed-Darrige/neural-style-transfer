@@ -25,7 +25,7 @@ i2i_pipeline: StableDiffusionImg2ImgPipeline | None = None
 device = "cuda" if torch.cuda.is_available() else "cpu"
 INFERENCE_LOCK = Lock()
 
-SUPPORTED_STYLES = ("cubism", "pop-art", "post-impressionism", "ukiyo-e")
+SUPPORTED_STYLES = ("cubism", "post-impressionism", "ukiyo-e")
 WEIGHTS_ROOT = Path(
     os.getenv(
         "STYLE_WEIGHTS_ROOT",
@@ -53,12 +53,6 @@ DEFAULT_NEGATIVE_PROMPT_T2I = os.getenv(
 STYLE_PRESETS: dict[str, dict[str, object]] = {
     "cubism": {
         "training_caption": "in cubism style, geometric shapes, picasso style",
-        "negative_prompt": "3d render, cg",
-        "i2i_strength": 0.65,
-        "i2i_guidance_scale": 8.0,
-    },
-    "pop-art": {
-        "training_caption": "in pop art style, bold colors, graphic design",
         "negative_prompt": "3d render, cg",
         "i2i_strength": 0.65,
         "i2i_guidance_scale": 8.0,
@@ -97,7 +91,7 @@ app.add_middleware(
 
 
 class StyleRequest(BaseModel):
-    style_type: Literal["cubism", "pop-art", "post-impressionism", "ukiyo-e"]
+    style_type: Literal["cubism", "post-impressionism", "ukiyo-e"]
     prompt: str | None = None
     init_image: str | None = None
     strength: float | None = None
@@ -178,7 +172,14 @@ def _compose_prompt(
     return f"{base_prompt}, {t2i_caption}", negative_prompt
 
 
-def _resolve_strength(requested: float | None, default: float) -> float:
+def _resolve_user_strength(style: str, requested: float | None) -> float:
+    u = 0.5 if requested is None else min(max(float(requested), 0.0), 1.0)
+    if style == "cubism":
+        u = 0.5 + (0.5 * u)
+    return u
+
+
+def _resolve_strength(style: str, requested: float | None, default: float) -> float:
     if requested is None:
         return default
     if requested < 0.0 or requested > 1.0:
@@ -194,16 +195,16 @@ def _resolve_strength(requested: float | None, default: float) -> float:
     MIN_STRENGTH = 0.42
     MAX_STRENGTH = 0.62
 
-    u = min(max(float(requested), 0.0), 1.0)
+    u = _resolve_user_strength(style, requested)
     # Bias for finer control at low values.
     u = u**1.6
     return MIN_STRENGTH + (u * (MAX_STRENGTH - MIN_STRENGTH))
 
 
-def _resolve_lora_scale(user_strength: float | None) -> float:
+def _resolve_lora_scale(style: str, user_strength: float | None) -> float:
     MIN_SCALE = 0.95
     MAX_SCALE = 1.30
-    u = 0.5 if user_strength is None else min(max(float(user_strength), 0.0), 1.0)
+    u = _resolve_user_strength(style, user_strength)
     u = u**1.6
     return MIN_SCALE + (u * (MAX_SCALE - MIN_SCALE))
 
@@ -310,11 +311,12 @@ async def generate_style(request: StyleRequest):
                 )
             )
 
-            _apply_lora(lora_path, _resolve_lora_scale(request.strength))
+            _apply_lora(lora_path, _resolve_lora_scale(folder_style, request.strength))
 
             with torch.inference_mode():
                 if is_img2img:
                     strength = _resolve_strength(
+                        folder_style,
                         request.strength,
                         float(preset["i2i_strength"]),
                     )
