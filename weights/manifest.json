@@ -1,44 +1,48 @@
 [
   {
     "style_id": "cubism",
-    "file_name": "cubism.safetensors", 
+    "file_name": "pytorch_lora_weights.safetensors",
     "byte_count": 3226184,
     "sha256": "2a68d54f9d4e4d2341bfb4637500aa0750dc623b9c82da60da8ebf49dcdcb45e",
     "inferred_rank": 4,
     "source_artifact": "final_lora_weights_only.zip",
+    "producer_notebook": "Colab_MultiStyle_LoRA_Training11.ipynb",
     "provenance_confidence": "HASH_MATCHING_ARTIFACT_CONTAINER_CONFIRMED",
     "deployment_claim": "current-live",
     "runtime_hash_verified": false
   },
   {
     "style_id": "post-impressionism",
-    "file_name": "post-impressionism.safetensors", 
+    "file_name": "pytorch_lora_weights.safetensors",
     "byte_count": 3226184,
     "sha256": "ae70f996a25278bb6e9a9eac1d09bbd909552ab99266f91f5ba38213ad933acf",
     "inferred_rank": 4,
     "source_artifact": "final_lora_weights_only.zip",
+    "producer_notebook": "Colab_MultiStyle_LoRA_Training11.ipynb",
     "provenance_confidence": "HASH_MATCHING_ARTIFACT_CONTAINER_CONFIRMED",
     "deployment_claim": "current-live",
     "runtime_hash_verified": false
   },
   {
     "style_id": "ukiyo-e",
-    "file_name": "ukiyo-e.safetensors", 
+    "file_name": "pytorch_lora_weights.safetensors",
     "byte_count": 3226184,
     "sha256": "35237cd93e20156729f59088f61e61e088543f6e51d097b838a18e2b6c33bcc1",
     "inferred_rank": 4,
     "source_artifact": "final_lora_weights_only.zip",
+    "producer_notebook": "Colab_MultiStyle_LoRA_Training11.ipynb",
     "provenance_confidence": "HASH_MATCHING_ARTIFACT_CONTAINER_CONFIRMED",
     "deployment_claim": "current-live",
     "runtime_hash_verified": false
   },
   {
     "style_id": "pop-art",
-    "file_name": "pop-art.safetensors",
+    "file_name": "pytorch_lora_weights.safetensors",
     "byte_count": 3226184,
     "sha256": "26db6ac4bd363ad5bec9d0fbbac06b3ad0cf6bb7ff813a9d57f334dc8eabf219",
     "inferred_rank": 4,
     "source_artifact": "final_lora_weights_only.zip",
+    "producer_notebook": "Colab_MultiStyle_LoRA_Training11.ipynb",
     "provenance_confidence": "HASH_MATCHING_ARTIFACT_CONTAINER_CONFIRMED",
     "deployment_status": "archived/not deployed"
   }

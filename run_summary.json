@@ -1,71 +1,78 @@
 {
   "project_name": "artoria-style-transfer",
-  "dataset_origin": "Curated Artoria style-transfer dataset",
+  "dataset_origin": "Artoria dataset downloaded from Kaggle slug h7alasaleh/artoria-dataset during the verified Google Colab run",
   "selected_topic": "Neural style transfer with LoRA adapters",
   "base_model": "runwayml/stable-diffusion-v1-5",
   "training_config": {
     "project_name": "artoria-style-transfer",
     "base_model": "runwayml/stable-diffusion-v1-5",
-    "train_mode": "single_gpu",
-    "max_images_per_style": 500,
-    "content_images_path": "dataset/Content",
-    "max_train_steps": 600,
+    "train_mode": "single-process fp16 Google Colab run",
+    "prepared_image_counts": {
+      "ukiyo-e": 1167,
+      "cubism": 2235,
+      "pop-art": 1483,
+      "post-impressionism": 6310
+    },
+    "max_train_steps": 1000,
     "learning_rate": 0.0001,
-    "rank": 8,
+    "rank": 4,
     "resolution": 512,
     "train_batch_size": 1,
     "gradient_accumulation_steps": 4,
     "seed": 42,
-    "workspace_root": "kaggle_workspace/style_transfer_workspace",
-    "output_root": "release_artifacts",
-    "temp_root": "temporary_training_workspace",
-    "use_8bit_adam": true
+    "workspace_root": "/content/working",
+    "output_root": "/content/working/lora-output-<style>",
+    "checkpointing_steps": 500,
+    "mixed_precision": "fp16",
+    "center_crop": true,
+    "random_flip": true,
+    "use_8bit_adam": false
   },
   "styles": [
     {
       "style_id": "cubism",
       "display_name": "Cubism",
       "dataset_path": "dataset/CCubism",
-      "caption": "an artwork in the cubism style",
-      "prompt_suffix": "cubism style, geometric abstraction, angular composition"
+      "caption": "a cubism style painting, geometric shapes, abstract, high quality"
     },
     {
       "style_id": "post-impressionism",
       "display_name": "Post-Impressionism",
       "dataset_path": "dataset/CPost_Impressionism",
-      "caption": "an artwork in the post-impressionism style",
-      "prompt_suffix": "post-impressionism style, expressive brushwork, vivid color rhythm"
+      "caption": "a post-impressionism style painting, expressive brushstrokes, vivid colors"
     },
     {
       "style_id": "ukiyo-e",
       "display_name": "Ukiyo-e",
       "dataset_path": "dataset/CUkiyo_e",
-      "caption": "an artwork in the ukiyo-e style",
-      "prompt_suffix": "ukiyo-e style, woodblock print aesthetics, elegant contour lines"
+      "caption": "a ukiyo-e style painting, high quality, authentic woodblock print"
     }
   ],
+  "archived_style": {
+    "style_id": "pop-art",
+    "status": "archived/not deployed",
+    "prepared_image_count": 1483,
+    "sha256": "26db6ac4bd363ad5bec9d0fbbac06b3ad0cf6bb7ff813a9d57f334dc8eabf219"
+  },
   "weights_manifest": [
     {
       "style_id": "cubism",
       "output_dir": "weights/lora-output-cubism",
       "weights_path": "weights/lora-output-cubism/pytorch_lora_weights.safetensors",
-      "log_path": "logs/cubism.log",
-      "weight_size_mb": 3.0767288208
+      "weight_size_mib": 3.0767288208
     },
     {
       "style_id": "post-impressionism",
       "output_dir": "weights/lora-output-post-impressionism",
       "weights_path": "weights/lora-output-post-impressionism/pytorch_lora_weights.safetensors",
-      "log_path": "logs/post-impressionism.log",
-      "weight_size_mb": 3.0767288208
+      "weight_size_mib": 3.0767288208
     },
     {
       "style_id": "ukiyo-e",
       "output_dir": "weights/lora-output-ukiyo-e",
       "weights_path": "weights/lora-output-ukiyo-e/pytorch_lora_weights.safetensors",
-      "log_path": "logs/ukiyo-e.log",
-      "weight_size_mb": 3.0767288208
+      "weight_size_mib": 3.0767288208
     }
   ],
-  "validation_grid": "artoria_style_transfer_showcase.png"
+  "provenance_document": "TRAINING_PROVENANCE.md"
 }
