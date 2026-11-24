@@ -1,20 +1,28 @@
-# Neural Style Transfer
+# Neural style transfer
 
-Stable Diffusion 1.5 text-to-image and image-to-image style transfer with verified rank-4 UNet LoRA adapters, a FastAPI inference backend, and a reproducible Colab training workflow.
+Stable Diffusion 1.5 image-to-image and text-to-image style transfer built on custom rank-4 UNet LoRA adapters, a FastAPI inference server deployed on Modal L4 GPUs, and a reproducible Colab training workflow.
 
-- **Live Demo:** [darrige.tech/projects/neural-style-lab](https://darrige.tech/projects/neural-style-lab)
+Live demo: [darrige.tech/projects/neural-style-lab](https://darrige.tech/projects/neural-style-lab)
 
-## Visual Showcase (Current Deployed SD 1.5 Rank-4 LoRA System)
+## Before and after samples
 
-Real before/after outputs generated from the live deployed SD 1.5 `img2img` backend (`prompt="a white fluffy spitz dog sitting on green grass"`, `strength=0.95`, 50 steps `EulerAncestralDiscreteScheduler`):
+Real image-to-image outputs from the deployed SD 1.5 LoRA service across all three production styles:
 
-| Original Input | Cubism | Post-Impressionism | Ukiyo-e |
+| Original input | Cubism | Post-Impressionism | Ukiyo-e |
 | :---: | :---: | :---: | :---: |
-| ![Original input](assets/samples/source-dog.jpg) | ![SD 1.5 Cubism](assets/samples/sd15-cubism.jpg) | ![SD 1.5 Post-Impressionism](assets/samples/sd15-post-impressionism.jpg) | ![SD 1.5 Ukiyo-e](assets/samples/sd15-ukiyo-e.jpg) |
+| ![Original input](assets/samples/source-dog.jpg) | ![Cubism output](assets/samples/sd15-cubism.jpg) | ![Post-Impressionism output](assets/samples/sd15-post-impressionism.jpg) | ![Ukiyo-e output](assets/samples/sd15-ukiyo-e.jpg) |
 
-## Deployed SD 1.5 Adapters
+## Architecture and inference pipeline
 
-The repository ships three rank-4 UNet LoRA adapters (`weights/manifest.json`):
+The inference server (`backend/main.py`) loads `runwayml/stable-diffusion-v1-5` paired with `stabilityai/sd-vae-ft-mse` to prevent FP16 VAE artifacts. Both `StableDiffusionPipeline` and `StableDiffusionImg2ImgPipeline` share a single UNet instance in GPU memory, keeping VRAM flat across modes.
+
+For image-to-image requests, the backend runs `EulerAncestralDiscreteScheduler` for 50 steps and maps the user's single `strength` control (`0.0` to `1.0`) through a nonlinear curve (`u^1.6`) to denoising strength `[0.42, 0.62]` and LoRA scale `[0.95, 1.30]`. Cubism shifts `u` into `[0.5, 1.0]` before applying the curve so geometric abstraction shows up even at lower slider positions. Every generation runs inside a thread lock and unloads the active adapter in a `finally` block so state never leaks between requests.
+
+Incoming base64 images are validated before decoding, capped at 10 MB (HTTP 413) and 4096x4096 pixels (HTTP 400), EXIF-transposed to RGB, and resized to aspect-preserving multiples of 8 within `[512, 768]`. Serverless production serving runs on an NVIDIA L4 via `backend/modal_app.py` with TF32 and cuDNN benchmarking enabled.
+
+## Shipped LoRA adapters
+
+Three rank-4 UNet adapters are tracked in `weights/manifest.json` and checked in CI:
 
 | Style | File size | SHA-256 |
 |---|---:|---|
@@ -22,57 +30,57 @@ The repository ships three rank-4 UNet LoRA adapters (`weights/manifest.json`):
 | Post-Impressionism | 3,226,184 bytes (3.08 MiB) | `ae70f996a25278bb6e9a9eac1d09bbd909552ab99266f91f5ba38213ad933acf` |
 | Ukiyo-e | 3,226,184 bytes (3.08 MiB) | `35237cd93e20156729f59088f61e61e088543f6e51d097b838a18e2b6c33bcc1` |
 
-Each file contains 256 FP32 LoRA tensors targeting SD 1.x UNet attention projections (`to_k`, `to_q`, `to_v`, `to_out.0`) with inferred rank 4. Pop Art was trained in the same four-style run and is archived without deployment.
+Each `.safetensors` file holds 256 FP32 tensors (797,184 parameters) targeting the SD 1.x UNet attention projections (`to_k`, `to_q`, `to_v`, `to_out.0`). Text encoder weights are untouched. Pop Art was trained in the same batch and archived without deployment.
 
-## Verified Training Provenance
+## Training configuration and provenance
 
-The shipped rank-4 adapters were produced by the multi-style Google Colab workflow documented in [`Artoria_Colab_MultiStyle_LoRA_Training.ipynb`](Artoria_Colab_MultiStyle_LoRA_Training.ipynb) and [`TRAINING_PROVENANCE.md`](TRAINING_PROVENANCE.md):
+All four adapters came from one sequential Google Colab run reconstructed in [`Artoria_Colab_MultiStyle_LoRA_Training.ipynb`](Artoria_Colab_MultiStyle_LoRA_Training.ipynb) and audited in [`TRAINING_PROVENANCE.md`](TRAINING_PROVENANCE.md).
 
 | Setting | Value |
 |---|---|
 | Base model | `runwayml/stable-diffusion-v1-5` |
-| Styles trained | Ukiyo-e, Cubism, Pop Art, Post-Impressionism |
-| Resolution | 512x512 |
-| Steps | 1,000 per style |
-| Batch size / accumulation | 1 / 4 |
-| Learning rate | `1e-4` with cosine scheduling |
-| Rank / alpha | 4 / 4 |
-| Seed | 42 |
-| Precision | fp16 |
-| Data preparation | Center crop and random horizontal flip |
+| Dataset source | `h7alasaleh/artoria-dataset` (1,167 Ukiyo-e; 2,235 Cubism; 1,483 Pop Art; 6,310 Post-Impressionism) |
+| Resolution | 512x512 (center crop, random horizontal flip) |
+| Training steps | 1,000 per style |
+| Batch size / grad accum | 1 / 4 |
+| Learning rate | `1e-4` with cosine schedule |
+| LoRA rank / alpha | 4 / 4 |
+| Precision / seed | fp16 / 42 |
 
-Prepared corpus counts: 1,167 Ukiyo-e, 2,235 Cubism, 1,483 Pop Art, and 6,310 Post-Impressionism images.
-
-## Local Backend & API
+## Running the API locally
 
 ```bash
 pip install -r backend/requirements.txt
 uvicorn backend.main:app --host 127.0.0.1 --port 8000
 ```
 
-- `GET /health` — Reports pipeline readiness, active device, supported styles, and adapter file presence.
-- `POST /generate` — Accepts `style_type` (`cubism`, `post-impressionism`, `ukiyo-e`), optional `prompt`, `init_image` (base64), `strength` (`0.0`–`1.0`), and `seed`.
-- **Input Limits:** Decoded `init_image` payloads are capped at **10 MB** (HTTP 413) and **4096x4096** pixels (~16.7 MP, HTTP 400).
-- **Img2img Mapping:** User `strength` (`0.0`–`1.0`) maps nonlinearly (`u^1.6`) to denoising strength `[0.42, 0.62]` and LoRA scale `[0.95, 1.30]` with `EulerAncestralDiscreteScheduler` (50 steps).
+| Endpoint | Method | Behavior |
+|---|---|---|
+| `/health` | `GET` | Returns pipeline readiness, active device (`cuda` or `cpu`), supported styles, and adapter file presence. |
+| `/generate` | `POST` | Accepts `style_type` (`cubism`, `post-impressionism`, `ukiyo-e`), optional `prompt`, `init_image` (base64), `strength` (`0.0` to `1.0`), and `seed`. Returns `image/jpeg`. |
 
-## Verification
+## Tests
 
-Run the lightweight backend & SHA-256 manifest tests without downloading GPU weights:
+Run the CPU-only backend validation and SHA-256 manifest suite without downloading model weights:
 
 ```bash
 SKIP_MODEL_LOAD=1 pytest -v
 ```
 
-## Repository Layout
+GitHub Actions (`.github/workflows/ci.yml`) runs this suite on every push and pull request.
 
-- `backend/main.py`: FastAPI inference server with `lifespan` startup, upload limits, and `/health`.
+## Project structure
+
+- `backend/main.py`: FastAPI inference server, image validation, nonlinear strength mapping, and adapter lifecycle.
+- `backend/modal_app.py`: Modal L4 ASGI deployment definition.
 - `weights/`: Shipped rank-4 `.safetensors` adapters and `manifest.json`.
-- `assets/samples/`: Verified before/after outputs from the deployed SD 1.5 img2img LoRA backend.
-- `tests/test_backend.py`: Weight SHA-256 integrity, input validation, and API tests.
-- `Artoria_Colab_MultiStyle_LoRA_Training.ipynb`: Executable multi-style Colab training notebook.
-- `TRAINING_PROVENANCE.md` & `run_summary.json`: Provenance chain and metadata.
+- `assets/samples/`: Verified before/after outputs from the deployed SD 1.5 service.
+- `tests/test_backend.py`: Adapter SHA-256 integrity, upload limits, strength bounds, and `/health` tests.
+- `Artoria_Colab_MultiStyle_LoRA_Training.ipynb`: Reproducible Colab training notebook.
+- `TRAINING_PROVENANCE.md` and `run_summary.json`: Artifact hash chain and training metadata.
 
-## Scope & Limitations
+## Known limitations
 
-- Adapter `.safetensors` files verify rank, tensor layout, dtype, and SHA-256 hashes; they do not cryptographically encode dataset identity or optimizer state.
-- Full GPU inference requires a CUDA-enabled environment or Modal/Colab runtime.
+- Pure image-to-image diffusion couples structure preservation and stylization to a single denoising strength parameter; without spatial conditioning, strong stylization can alter fine subject geometry.
+- Shipped `.safetensors` binaries prove rank, tensor layout, dtype, and SHA-256 hashes, not dataset identity or optimizer state. Those training claims come from the recorded Colab notebook documented in `TRAINING_PROVENANCE.md`.
+- Full inference requires a CUDA GPU (local, Colab, or Modal).
