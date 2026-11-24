@@ -1,28 +1,26 @@
+from __future__ import annotations
+
 import base64
 import binascii
 import os
 import random
+from contextlib import asynccontextmanager
 from io import BytesIO
 from pathlib import Path
 from threading import Lock
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
-import torch
-from diffusers import (
-    AutoencoderKL,
-    EulerAncestralDiscreteScheduler,
-    StableDiffusionImg2ImgPipeline,
-    StableDiffusionPipeline,
-)
 from fastapi import FastAPI, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
 from PIL import Image, ImageOps
 from pydantic import BaseModel
 
-app = FastAPI(title="Neural Style Transfer API")
+if TYPE_CHECKING:
+    from diffusers import StableDiffusionImg2ImgPipeline, StableDiffusionPipeline
+
 pipeline: StableDiffusionPipeline | None = None
 i2i_pipeline: StableDiffusionImg2ImgPipeline | None = None
-device = "cuda" if torch.cuda.is_available() else "cpu"
+device = "cpu"
 INFERENCE_LOCK = Lock()
 
 SUPPORTED_STYLES = ("cubism", "post-impressionism", "ukiyo-e")
@@ -39,6 +37,9 @@ T2I_GUIDANCE_SCALE = float(os.getenv("STYLE_T2I_GUIDANCE_SCALE", str(GUIDANCE_SC
 I2I_INFERENCE_STEPS = int(os.getenv("STYLE_I2I_INFERENCE_STEPS", "50"))
 I2I_MIN_DIM = int(os.getenv("STYLE_I2I_MIN_DIM", str(IMAGE_SIZE)))
 I2I_MAX_DIM = int(os.getenv("STYLE_I2I_MAX_DIM", "768"))
+
+MAX_IMAGE_BYTES = 10 * 1024 * 1024  # 10 MB decoded upload limit
+MAX_IMAGE_PIXELS = 4096 * 4096      # ~16.7 MP pixel limit
 
 DEFAULT_NEGATIVE_PROMPT_I2I = os.getenv(
     "STYLE_NEGATIVE_PROMPT_I2I",
@@ -73,28 +74,13 @@ STYLE_PRESETS: dict[str, dict[str, object]] = {
 
 RESAMPLE = getattr(Image, "Resampling", Image).LANCZOS
 
-cors_origins = [
-    origin.strip()
-    for origin in os.getenv(
-        "CORS_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000"
-    ).split(",")
-    if origin.strip()
-]
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=cors_origins,
-    allow_credentials=False,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
 
 class StyleRequest(BaseModel):
     style_type: Literal["cubism", "post-impressionism", "ukiyo-e"]
     prompt: str | None = None
     init_image: str | None = None
     strength: float | None = None
+    seed: int | None = None
 
 
 def _resolve_lora_path(style: str) -> Path:
@@ -113,9 +99,27 @@ def _decode_init_image(payload: str) -> Image.Image:
     try:
         init_payload = payload.split(",", 1)[1] if "," in payload else payload
         init_bytes = base64.b64decode(init_payload, validate=True)
+    except (binascii.Error, ValueError) as exc:
+        raise HTTPException(status_code=400, detail="Invalid source image.") from exc
+
+    if len(init_bytes) > MAX_IMAGE_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail=f"Source image exceeds {MAX_IMAGE_BYTES // (1024 * 1024)} MB limit.",
+        )
+
+    try:
         init_img = Image.open(BytesIO(init_bytes))
+        width, height = init_img.size
+        if width <= 0 or height <= 0 or width * height > MAX_IMAGE_PIXELS:
+            raise HTTPException(
+                status_code=400,
+                detail="Source image dimensions exceed allowed pixel limit.",
+            )
         return ImageOps.exif_transpose(init_img).convert("RGB")
-    except (binascii.Error, OSError, ValueError) as exc:
+    except HTTPException:
+        raise
+    except (OSError, ValueError) as exc:
         raise HTTPException(status_code=400, detail="Invalid source image.") from exc
 
 
@@ -127,7 +131,9 @@ def _round_to_multiple(value: float, multiple: int = 8) -> int:
 def _prepare_init_image(image: Image.Image) -> Image.Image:
     width, height = image.size
     if width <= 0 or height <= 0:
-        raise HTTPException(status_code=400, detail="Source image has invalid dimensions.")
+        raise HTTPException(
+            status_code=400, detail="Source image has invalid dimensions."
+        )
 
     short_side = min(width, height)
     long_side = max(width, height)
@@ -148,7 +154,9 @@ def _compose_prompt(
     is_img2img: bool,
 ) -> tuple[str, str]:
     preset = STYLE_PRESETS[style]
-    base_negative = DEFAULT_NEGATIVE_PROMPT_I2I if is_img2img else DEFAULT_NEGATIVE_PROMPT_T2I
+    base_negative = (
+        DEFAULT_NEGATIVE_PROMPT_I2I if is_img2img else DEFAULT_NEGATIVE_PROMPT_T2I
+    )
     negative_prompt = f"{base_negative}, {preset['negative_prompt']}"
     base_prompt = (prompt or "").strip()
 
@@ -188,15 +196,10 @@ def _resolve_strength(style: str, requested: float | None, default: float) -> fl
             detail="Strength must be between 0.0 and 1.0.",
         )
 
-    # Strength is *denoising amount* in img2img: too low looks near-identity,
-    # too high can drift into unrelated images.
-    # Use a smooth, predictable mapping for the user slider [0..1].
-    # Keep denoising in a safe band to reduce unrelated outputs.
     MIN_STRENGTH = 0.42
     MAX_STRENGTH = 0.62
 
     u = _resolve_user_strength(style, requested)
-    # Bias for finer control at low values.
     u = u**1.6
     return MIN_STRENGTH + (u * (MAX_STRENGTH - MIN_STRENGTH))
 
@@ -220,10 +223,18 @@ def _apply_lora(style_path: Path, lora_scale: float) -> None:
         i2i_pipeline.set_adapters(["style"], adapter_weights=[float(lora_scale)])
 
 
-@app.on_event("startup")
-async def load_pipeline() -> None:
-    global pipeline, i2i_pipeline
+def load_pipeline() -> None:
+    global pipeline, i2i_pipeline, device
 
+    import torch
+    from diffusers import (
+        AutoencoderKL,
+        EulerAncestralDiscreteScheduler,
+        StableDiffusionImg2ImgPipeline,
+        StableDiffusionPipeline,
+    )
+
+    device = "cuda" if torch.cuda.is_available() else "cpu"
     if torch.cuda.is_available():
         torch.backends.cuda.matmul.allow_tf32 = True
         torch.backends.cudnn.allow_tf32 = True
@@ -252,16 +263,55 @@ async def load_pipeline() -> None:
     i2i_pipeline = i2i_pipeline.to(device)
     i2i_pipeline.set_progress_bar_config(disable=True)
 
-    # Euler Ancestral is generally smoother for img2img style transfer.
     i2i_pipeline.scheduler = EulerAncestralDiscreteScheduler.from_config(
         i2i_pipeline.scheduler.config
     )
 
-    assert id(pipeline.unet) == id(i2i_pipeline.unet), "UNet not shared between pipelines"
-
-    print(
-        f"Pipeline loaded. device={device}"
+    assert id(pipeline.unet) == id(i2i_pipeline.unet), (
+        "UNet not shared between pipelines"
     )
+
+    print(f"Pipeline loaded. device={device}")
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    if os.getenv("SKIP_MODEL_LOAD", "0") != "1":
+        load_pipeline()
+    yield
+
+
+app = FastAPI(title="Neural Style Transfer API", lifespan=lifespan)
+
+cors_origins = [
+    origin.strip()
+    for origin in os.getenv(
+        "CORS_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000"
+    ).split(",")
+    if origin.strip()
+]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=cors_origins,
+    allow_credentials=False,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
+@app.get("/health")
+def health():
+    weights_present = {
+        style: (WEIGHTS_ROOT / f"lora-output-{style}" / "pytorch_lora_weights.safetensors").exists()
+        for style in SUPPORTED_STYLES
+    }
+    return {
+        "ready": pipeline is not None and i2i_pipeline is not None,
+        "device": device,
+        "supported_styles": list(SUPPORTED_STYLES),
+        "weights_present": weights_present,
+    }
 
 
 @app.post("/generate")
@@ -270,6 +320,8 @@ async def generate_style(request: StyleRequest):
 
     if pipeline is None or i2i_pipeline is None:
         raise HTTPException(status_code=503, detail="Pipeline is not ready")
+
+    import torch
 
     folder_style = request.style_type.lower()
     lora_path = _resolve_lora_path(folder_style)
@@ -281,7 +333,12 @@ async def generate_style(request: StyleRequest):
 
     print(
         "[StyleRequest]",
-        {"style_type": request.style_type, "prompt": request.prompt, "has_init_image": is_img2img, "seed": seed},
+        {
+            "style_type": request.style_type,
+            "prompt": request.prompt,
+            "has_init_image": is_img2img,
+            "seed": seed,
+        },
     )
 
     image_buffer = BytesIO()

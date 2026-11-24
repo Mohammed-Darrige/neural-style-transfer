@@ -1,10 +1,20 @@
 # Neural Style Transfer
 
-Stable Diffusion 1.5 image-to-image style transfer with verified LoRA artifacts, a FastAPI backend, and a reproducible Colab training workflow.
+Stable Diffusion 1.5 text-to-image and image-to-image style transfer with verified rank-4 UNet LoRA adapters, a FastAPI inference backend, and a reproducible Colab training workflow.
 
-## Deployed Adapters
+- **Live Demo:** [darrige.tech/projects/neural-style-lab](https://darrige.tech/projects/neural-style-lab)
 
-The repository ships three rank-4 UNet LoRA adapters:
+## Visual Showcase (Cubism LoRA Pilot — Seed 101)
+
+Side-by-side comparison from our Kaggle Dual-T4 Cubism LoRA pilot (`seed=101`) comparing the unadapted base output against the reloaded LoRA adapter:
+
+| Base Output (Unadapted) | Cubism LoRA Adapter Reloaded |
+| :---: | :---: |
+| ![Base output seed 101](assets/samples/cubism-base-seed101.png) | ![Cubism LoRA output seed 101](assets/samples/cubism-lora-seed101.png) |
+
+## Deployed SD 1.5 Adapters
+
+The repository ships three rank-4 UNet LoRA adapters (`weights/manifest.json`):
 
 | Style | File size | SHA-256 |
 |---|---:|---|
@@ -12,18 +22,11 @@ The repository ships three rank-4 UNet LoRA adapters:
 | Post-Impressionism | 3,226,184 bytes (3.08 MiB) | `ae70f996a25278bb6e9a9eac1d09bbd909552ab99266f91f5ba38213ad933acf` |
 | Ukiyo-e | 3,226,184 bytes (3.08 MiB) | `35237cd93e20156729f59088f61e61e088543f6e51d097b838a18e2b6c33bcc1` |
 
-The files contain 256 FP32 LoRA tensors, target SD 1.x UNet attention projections (`to_k`, `to_q`, `to_v`, `to_out.0`), and have inferred rank 4. The complete manifest is `weights/manifest.json`.
-
-Pop Art was trained in the same four-style run but is intentionally archived and not exposed by the current backend or live UI.
+Each file contains 256 FP32 LoRA tensors targeting SD 1.x UNet attention projections (`to_k`, `to_q`, `to_v`, `to_out.0`) with inferred rank 4. Pop Art was trained in the same four-style run and is archived without deployment.
 
 ## Verified Training Provenance
 
-The shipped rank-4 adapters were created by the multi-style Google Colab workflow documented in:
-
-- `Artoria_Colab_MultiStyle_LoRA_Training.ipynb`
-- `TRAINING_PROVENANCE.md`
-
-Verified run configuration:
+The shipped rank-4 adapters were produced by the multi-style Google Colab workflow documented in [`Artoria_Colab_MultiStyle_LoRA_Training.ipynb`](Artoria_Colab_MultiStyle_LoRA_Training.ipynb) and [`TRAINING_PROVENANCE.md`](TRAINING_PROVENANCE.md):
 
 | Setting | Value |
 |---|---|
@@ -36,48 +39,40 @@ Verified run configuration:
 | Rank / alpha | 4 / 4 |
 | Seed | 42 |
 | Precision | fp16 |
-| Data preparation | center crop and random horizontal flip |
+| Data preparation | Center crop and random horizontal flip |
 
-The original run prepared 1,167 Ukiyo-e, 2,235 Cubism, 1,483 Pop Art, and 6,310 Post-Impressionism images. These are prepared corpus counts, not a claim that every image was consumed in a fixed number of epochs.
+Prepared corpus counts: 1,167 Ukiyo-e, 2,235 Cubism, 1,483 Pop Art, and 6,310 Post-Impressionism images.
 
-## Inference
-
-The backend supports text-to-image and image-to-image requests. The portfolio primarily uses image-to-image mode.
-
-- Base model: `runwayml/stable-diffusion-v1-5`
-- Img2img scheduler: Euler Ancestral
-- Default local text-to-image steps: 30
-- Default img2img steps: 50
-- Img2img strength input: `0.0` to `1.0`
-
-The user-facing style control maps nonlinearly to both img2img denoising strength and LoRA scale. It is not a direct Diffusers denoise-strength value. See the deployed backend implementation for the exact mapping.
-
-## Local Backend Setup
+## Local Backend & API
 
 ```bash
 pip install -r backend/requirements.txt
-uvicorn backend.main:app --reload
+uvicorn backend.main:app --host 127.0.0.1 --port 8000
 ```
 
-The backend loads each adapter from:
+- `GET /health` — Reports pipeline readiness, active device, supported styles, and adapter file presence.
+- `POST /generate` — Accepts `style_type` (`cubism`, `post-impressionism`, `ukiyo-e`), optional `prompt`, `init_image` (base64), `strength` (`0.0`–`1.0`), and `seed`.
+- **Input Limits:** Decoded `init_image` payloads are capped at **10 MB** (HTTP 413) and **4096x4096** pixels (~16.7 MP, HTTP 400).
+- **Img2img Mapping:** User `strength` (`0.0`–`1.0`) maps nonlinearly (`u^1.6`) to denoising strength `[0.42, 0.62]` and LoRA scale `[0.95, 1.30]` with `EulerAncestralDiscreteScheduler` (50 steps).
 
-```text
-weights/lora-output-<style>/pytorch_lora_weights.safetensors
+## Verification
+
+Run the lightweight backend & SHA-256 manifest tests without downloading GPU weights:
+
+```bash
+SKIP_MODEL_LOAD=1 pytest -v
 ```
-
-Visual output can vary across hardware and library revisions. Record the backend revision and request parameters when comparing results.
 
 ## Repository Layout
 
-- `Artoria_Colab_MultiStyle_LoRA_Training.ipynb`: clean executable version of the verified multi-style training workflow
-- `TRAINING_PROVENANCE.md`: artifact, ZIP, hash, and worker-script evidence
-- `archive/Artoria_Style_Transfer_Kaggle_Training_rank8_legacy.ipynb`: retained historical rank-8 reconstruction; it did not produce the shipped rank-4 binaries
-- `weights/`: shipped adapter binaries and manifest
-- `backend/`: FastAPI and Modal deployment code
-- `run_summary.json`: machine-readable training and artifact summary
+- `backend/main.py`: FastAPI inference server with `lifespan` startup, upload limits, and `/health`.
+- `weights/`: Shipped rank-4 `.safetensors` adapters and `manifest.json`.
+- `assets/samples/`: Real pilot comparison images.
+- `tests/test_backend.py`: Weight SHA-256 integrity, input validation, and API tests.
+- `Artoria_Colab_MultiStyle_LoRA_Training.ipynb`: Executable multi-style Colab training notebook.
+- `TRAINING_PROVENANCE.md` & `run_summary.json`: Provenance chain and metadata.
 
-## Scope and Limitations
+## Scope & Limitations
 
-- The adapter files prove rank, tensor structure, dtype, and hashes. They do not independently encode dataset identity, optimizer, training steps, or image count.
-- The Colab workflow downloaded Diffusers from the moving `main` branch. The provenance document records the closest reconstructable worker-script commit and hash.
-- Runtime hashes from the live Modal container require a deployment metadata endpoint before they can be asserted as cryptographically verified.
+- Adapter `.safetensors` files verify rank, tensor layout, dtype, and SHA-256 hashes; they do not cryptographically encode dataset identity or optimizer state.
+- Full GPU inference requires a CUDA-enabled environment or Modal/Colab runtime.
