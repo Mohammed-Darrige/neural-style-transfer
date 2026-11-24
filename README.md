@@ -4,13 +4,13 @@ Stable Diffusion 1.5 text-to-image and image-to-image style transfer with verifi
 
 - **Live Demo:** [darrige.tech/projects/neural-style-lab](https://darrige.tech/projects/neural-style-lab)
 
-## Visual Showcase (Cubism LoRA Pilot — Seed 101)
+## Visual Showcase (Current Deployed SD 1.5 Rank-4 LoRA System)
 
-Side-by-side comparison from our Kaggle Dual-T4 Cubism LoRA pilot (`seed=101`) comparing the unadapted base output against the reloaded LoRA adapter:
+Real before/after outputs generated from the live deployed SD 1.5 `img2img` backend (`prompt="a white fluffy spitz dog sitting on green grass"`, `strength=0.95`, 50 steps `EulerAncestralDiscreteScheduler`):
 
-| Base Output (Unadapted) | Cubism LoRA Adapter Reloaded |
-| :---: | :---: |
-| ![Base output seed 101](assets/samples/cubism-base-seed101.png) | ![Cubism LoRA output seed 101](assets/samples/cubism-lora-seed101.png) |
+| Original Input | Cubism | Post-Impressionism | Ukiyo-e |
+| :---: | :---: | :---: | :---: |
+| ![Original input](assets/samples/source-dog.jpg) | ![SD 1.5 Cubism](assets/samples/sd15-cubism.jpg) | ![SD 1.5 Post-Impressionism](assets/samples/sd15-post-impressionism.jpg) | ![SD 1.5 Ukiyo-e](assets/samples/sd15-ukiyo-e.jpg) |
 
 ## Deployed SD 1.5 Adapters
 
@@ -67,7 +67,7 @@ SKIP_MODEL_LOAD=1 pytest -v
 
 - `backend/main.py`: FastAPI inference server with `lifespan` startup, upload limits, and `/health`.
 - `weights/`: Shipped rank-4 `.safetensors` adapters and `manifest.json`.
-- `assets/samples/`: Real pilot comparison images.
+- `assets/samples/`: Verified before/after outputs from the deployed SD 1.5 img2img LoRA backend.
 - `tests/test_backend.py`: Weight SHA-256 integrity, input validation, and API tests.
 - `Artoria_Colab_MultiStyle_LoRA_Training.ipynb`: Executable multi-style Colab training notebook.
 - `TRAINING_PROVENANCE.md` & `run_summary.json`: Provenance chain and metadata.
