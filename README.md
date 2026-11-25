@@ -47,6 +47,10 @@ All four adapters came from one sequential Google Colab run reconstructed in [`A
 | LoRA rank / alpha | 4 / 4 |
 | Precision / seed | fp16 / 42 |
 
+### Dataset
+
+The [Artoria Dataset](https://www.kaggle.com/datasets/h7alasaleh/artoria-dataset) was co-created with a teammate as part of a Fundamentals of Machine Learning course project and is hosted on Kaggle.
+
 ## Running the API locally
 
 ```bash
